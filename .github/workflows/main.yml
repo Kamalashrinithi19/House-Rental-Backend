@@ -36,4 +36,4 @@ jobs:
             npm install
             pm2 delete student-api || true
             pm2 start server.js --name student-api
-            pm2 sa
+            pm2 save
