@@ -23,7 +23,7 @@ jobs:
           script: |
             cd /home/ubuntu || exit 1
 
-            if [ ! -d "House-Rental-Backend ]; then
+            if [ ! -d "House-Rental-Backend" ]; then
               git clone https://github.com/Kamalashrinithi19/House-Rental-Backend.git
             fi
 
