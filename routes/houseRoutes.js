@@ -22,5 +22,6 @@ router.put('/:id/decline', protect, declineRequest);
 router.put('/:id/rent', protect, toggleRent);
 router.delete('/:id', protect, deleteHouse);
 router.put('/:id/tenant-details', protect, updateTenantDetails);
+router.put('/:id/vacate', requireAuth, houseController.vacateHouse);
 
 module.exports = router;

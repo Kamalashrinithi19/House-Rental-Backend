@@ -108,34 +108,47 @@ const getMyHouses = async (req, res) => {
       res.json(houses);
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
+// file: server/controllers/houseController.js
+
 const acceptRequest = async (req, res) => {
-    try {
-      const { requestId } = req.body;
-      const house = await House.findById(req.params.id);
-      
-      // Find the specific request
-      const request = house.requests.find(r => r._id.toString() === requestId);
-      if (!request) return res.status(404).json({ message: 'Request not found' });
+  try {
+    const { houseId, requestId } = req.body;
+    
+    // 1. Find the House
+    const house = await House.findById(houseId);
+    if (!house) return res.status(404).json({ message: "House not found" });
 
-      // 1. UPDATE STATUS
-      house.isBooked = true;
+    // 2. Find the Renter's ID from the request list
+    const request = house.requests.find(r => r._id.toString() === requestId);
+    if (!request) return res.status(404).json({ message: "Request not found" });
+    
+    const renterId = request.user; // This is the ID of the person applying
 
-      // 2. CREATE TENANT OBJECT (CRITICAL STEP)
-      house.currentTenant = {
-        userId: request.userId, // This links the Renter
-        name: request.name,
-        email: request.email,
-        phone: request.phone,
-        startDate: new Date().toISOString().split('T')[0],
-        isRentPaid: false
-      };
-      
-      // 3. CLEAR REQUESTS
-      house.requests = []; 
-      
-      await house.save();
-      res.json(house);
-    } catch (error) { res.status(500).json({ message: error.message }); }
+    // 🛑 CRITICAL CHECK: Is this renter already living in ANY house?
+    const existingResidency = await House.findOne({ "tenant.id": renterId });
+    
+    if (existingResidency) {
+      return res.status(400).json({ 
+        message: "Action Failed: This user is already a resident in another house. They must vacate first." 
+      });
+    }
+
+    // 3. If they are homeless (clean), ACCEPT them
+    house.tenant = {
+      id: renterId,
+      name: request.name,
+      email: request.email,
+      moveInDate: new Date()
+    };
+    house.isBooked = true;
+    house.requests = []; // Clear other requests (optional)
+
+    await house.save();
+    res.json({ message: "Tenant accepted successfully!", house });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 const declineRequest = async (req, res) => {
     try {
@@ -155,6 +168,34 @@ const toggleRent = async (req, res) => {
       }
       res.json(house);
     } catch (error) { res.status(500).json({ message: error.message }); }
+};
+// Add this to houseController.js
+
+exports.vacateHouse = async (req, res) => {
+  try {
+    const house = await House.findById(req.params.id);
+    
+    if (!house) return res.status(404).json({ message: "House not found" });
+
+    // Security: Only the Owner OR the Tenant can vacate
+    // (Assuming req.user is populated by your authMiddleware)
+    const isOwner = house.owner.toString() === req.user._id.toString();
+    const isTenant = house.tenant && house.tenant.id.toString() === req.user._id.toString();
+
+    if (!isOwner && !isTenant) {
+      return res.status(403).json({ message: "Not authorized to vacate this house" });
+    }
+
+    // Reset the house
+    house.tenant = null;
+    house.isBooked = false;
+    
+    await house.save();
+    res.json({ message: "House vacated successfully", house });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 const deleteHouse = async (req, res) => {
     try {
