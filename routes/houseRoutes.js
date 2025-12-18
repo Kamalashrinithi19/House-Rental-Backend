@@ -6,6 +6,8 @@ const {
   toggleRent, deleteHouse, updateTenantDetails
 } = require('../controllers/houseController');
 const requireAuth = require('../middleware/authMiddleware');
+const houseController = require('../controllers/houseController');
+
 // IMPORT THE SECURITY GUARD
 const { protect } = require('../middleware/authMiddleware'); 
 
