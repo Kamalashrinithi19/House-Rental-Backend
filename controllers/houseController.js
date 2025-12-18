@@ -103,33 +103,30 @@ const getMyHouses = async (req, res) => {
 // 5. Accept Request (Fixed to use currentTenant)
 const acceptRequest = async (req, res) => {
   try {
-    const { houseId, requestId } = req.body;
+    // FIX 1: Get House ID from the URL (req.params.id), NOT the body
+    const house = await House.findById(req.params.id);
+    const { requestId } = req.body;
     
-    const house = await House.findById(houseId);
     if (!house) return res.status(404).json({ message: "House not found" });
 
     const request = house.requests.find(r => r._id.toString() === requestId);
     if (!request) return res.status(404).json({ message: "Request not found" });
     
-    // FIX: Use 'userId' because that is how you pushed it in requestBooking
     const renterId = request.userId; 
 
     // Check if renter is already a resident elsewhere
-    // We check 'currentTenant.userId' to be consistent
     const existingResidency = await House.findOne({ "currentTenant.userId": renterId });
-    
     if (existingResidency) {
       return res.status(400).json({ 
-        message: "Action Failed: This user is already a resident in another house. They must vacate first." 
+        message: "Action Failed: This user is already a resident in another house." 
       });
     }
 
-    // FIX: Save to 'currentTenant' so it matches Dashboard logic
     house.currentTenant = {
       userId: renterId,
       name: request.name,
       email: request.email,
-      phone: request.phone, // Added phone
+      phone: request.phone,
       startDate: new Date(),
       isRentPaid: false
     };
@@ -147,7 +144,11 @@ const acceptRequest = async (req, res) => {
 const declineRequest = async (req, res) => {
     try {
       const { requestId } = req.body;
+      // FIX 2: Ensure we use req.params.id here too
       const house = await House.findById(req.params.id);
+      
+      if (!house) return res.status(404).json({ message: "House not found" });
+
       house.requests = house.requests.filter(r => r._id.toString() !== requestId);
       await house.save();
       res.json(house);
