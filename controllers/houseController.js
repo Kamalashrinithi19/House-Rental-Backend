@@ -178,9 +178,12 @@ exports.vacateHouse = async (req, res) => {
     const houseId = req.params.id;
     const house = await House.findById(houseId);
 
-    if (!house) return res.status(404).json({ message: "House not found" });
+    if (!house) {
+      return res.status(404).json({ message: "House not found" });
+    }
 
     // Security Check: Only Owner or the specific Tenant can vacate
+    // We check if tenant exists first to avoid crashes
     const isOwner = house.owner.toString() === req.user._id.toString();
     const isTenant = house.tenant && house.tenant.id && house.tenant.id.toString() === req.user._id.toString();
 
@@ -188,15 +191,15 @@ exports.vacateHouse = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to vacate this house" });
     }
 
-    // 🛑 HARD RESET: We use 'findByIdAndUpdate' to completely wipe the fields
+    // 🛑 HARD RESET: Completely wipe tenant data
     await House.findByIdAndUpdate(houseId, {
       $set: { 
         isBooked: false,
-        requests: [] // Optional: Clear old requests if you want
+        requests: [] // Optional: clear requests so the owner starts fresh
       },
       $unset: { 
-        tenant: "",      // This completely removes the 'tenant' object
-        currentTenant: "" // If you named it 'currentTenant' in your schema, wipe this too
+        tenant: "",       // Removes 'tenant' field
+        currentTenant: "" // Removes 'currentTenant' field (just in case)
       }
     });
 
@@ -207,6 +210,7 @@ exports.vacateHouse = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 const deleteHouse = async (req, res) => {
     try {
         await House.findByIdAndDelete(req.params.id);
