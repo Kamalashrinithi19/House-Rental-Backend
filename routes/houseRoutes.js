@@ -5,6 +5,7 @@ const {
   requestBooking, acceptRequest, declineRequest, 
   toggleRent, deleteHouse, updateTenantDetails
 } = require('../controllers/houseController');
+const requireAuth = require('../middleware/requireAuth');
 
 // IMPORT THE SECURITY GUARD
 const { protect } = require('../middleware/authMiddleware'); 
