@@ -171,29 +171,39 @@ const toggleRent = async (req, res) => {
 };
 // Add this to houseController.js
 
+// file: server/controllers/houseController.js
+
 exports.vacateHouse = async (req, res) => {
   try {
-    const house = await House.findById(req.params.id);
-    
+    const houseId = req.params.id;
+    const house = await House.findById(houseId);
+
     if (!house) return res.status(404).json({ message: "House not found" });
 
-    // Security: Only the Owner OR the Tenant can vacate
-    // (Assuming req.user is populated by your authMiddleware)
+    // Security Check: Only Owner or the specific Tenant can vacate
     const isOwner = house.owner.toString() === req.user._id.toString();
-    const isTenant = house.tenant && house.tenant.id.toString() === req.user._id.toString();
+    const isTenant = house.tenant && house.tenant.id && house.tenant.id.toString() === req.user._id.toString();
 
     if (!isOwner && !isTenant) {
       return res.status(403).json({ message: "Not authorized to vacate this house" });
     }
 
-    // Reset the house
-    house.tenant = null;
-    house.isBooked = false;
-    
-    await house.save();
-    res.json({ message: "House vacated successfully", house });
+    // 🛑 HARD RESET: We use 'findByIdAndUpdate' to completely wipe the fields
+    await House.findByIdAndUpdate(houseId, {
+      $set: { 
+        isBooked: false,
+        requests: [] // Optional: Clear old requests if you want
+      },
+      $unset: { 
+        tenant: "",      // This completely removes the 'tenant' object
+        currentTenant: "" // If you named it 'currentTenant' in your schema, wipe this too
+      }
+    });
+
+    res.json({ message: "Vacated successfully" });
 
   } catch (error) {
+    console.error("Vacate Error:", error);
     res.status(500).json({ message: error.message });
   }
 };
