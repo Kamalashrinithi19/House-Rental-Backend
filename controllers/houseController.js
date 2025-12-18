@@ -9,13 +9,12 @@ const addHouse = async (req, res) => {
       isBooked, tenant 
     } = req.body;
     
-    // Safety: Ensure Owner ID is valid
     if (!req.user || !req.user._id) {
         return res.status(401).json({ message: "Unauthorized: No Owner ID found" });
     }
 
     const newHouseData = {
-      ownerId: req.user._id, // <--- THIS IS CRITICAL
+      ownerId: req.user._id, 
       title, location, rent, images,
       propertyType, furnishing, amenities,
       isBooked: isBooked || false
@@ -30,7 +29,7 @@ const addHouse = async (req, res) => {
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
-// 2. Get All Houses (Public Search) - POPULATE OWNER
+// 2. Get All Houses
 const getAllHouses = async (req, res) => {
   try {
     const { query } = req.query;
@@ -41,20 +40,18 @@ const getAllHouses = async (req, res) => {
        ]
     } : {};
     
-    // .populate('ownerId') ensures we get the Name for the UI
     const houses = await House.find(filter).populate('ownerId', 'name email');
     res.json(houses);
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
-// 3. Request Booking (Renter)
+// 3. Request Booking
 const requestBooking = async (req, res) => {
   try {
     const house = await House.findById(req.params.id);
     if (!house) return res.status(404).json({ message: 'House not found' });
     if (house.isBooked) return res.status(400).json({ message: 'House is already occupied' });
 
-    // Check duplicate
     const existing = house.requests.find(r => r.userId.toString() === req.user._id.toString());
     if (existing) return res.status(400).json({ message: 'Request already sent' });
 
@@ -71,9 +68,8 @@ const requestBooking = async (req, res) => {
     res.json(house);
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
-// ... existing imports
 
-// NEW: Update Tenant Details (Name, Email, Phone, Date)
+// 4. Update Tenant Details
 const updateTenantDetails = async (req, res) => {
   try {
     const { name, email, phone, startDate } = req.body;
@@ -81,12 +77,10 @@ const updateTenantDetails = async (req, res) => {
 
     if (!house) return res.status(404).json({ message: 'House not found' });
     
-    // Ensure house is actually occupied before editing tenant
     if (!house.isBooked || !house.currentTenant) {
         return res.status(400).json({ message: 'No tenant to edit' });
     }
 
-    // Merge new details with existing ones (keep userId and rent status)
     house.currentTenant.name = name || house.currentTenant.name;
     house.currentTenant.email = email || house.currentTenant.email;
     house.currentTenant.phone = phone || house.currentTenant.phone;
@@ -99,33 +93,30 @@ const updateTenantDetails = async (req, res) => {
   }
 };
 
-
-
-// ... (Keep getMyHouses, acceptRequest, declineRequest, toggleRent, deleteHouse as is) ...
 const getMyHouses = async (req, res) => {
     try {
       const houses = await House.find({ ownerId: req.user._id });
       res.json(houses);
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
-// file: server/controllers/houseController.js
 
+// 5. Accept Request (Fixed to use currentTenant)
 const acceptRequest = async (req, res) => {
   try {
     const { houseId, requestId } = req.body;
     
-    // 1. Find the House
     const house = await House.findById(houseId);
     if (!house) return res.status(404).json({ message: "House not found" });
 
-    // 2. Find the Renter's ID from the request list
     const request = house.requests.find(r => r._id.toString() === requestId);
     if (!request) return res.status(404).json({ message: "Request not found" });
     
-    const renterId = request.user; // This is the ID of the person applying
+    // FIX: Use 'userId' because that is how you pushed it in requestBooking
+    const renterId = request.userId; 
 
-    // 🛑 CRITICAL CHECK: Is this renter already living in ANY house?
-    const existingResidency = await House.findOne({ "tenant.id": renterId });
+    // Check if renter is already a resident elsewhere
+    // We check 'currentTenant.userId' to be consistent
+    const existingResidency = await House.findOne({ "currentTenant.userId": renterId });
     
     if (existingResidency) {
       return res.status(400).json({ 
@@ -133,15 +124,17 @@ const acceptRequest = async (req, res) => {
       });
     }
 
-    // 3. If they are homeless (clean), ACCEPT them
-    house.tenant = {
-      id: renterId,
+    // FIX: Save to 'currentTenant' so it matches Dashboard logic
+    house.currentTenant = {
+      userId: renterId,
       name: request.name,
       email: request.email,
-      moveInDate: new Date()
+      phone: request.phone, // Added phone
+      startDate: new Date(),
+      isRentPaid: false
     };
     house.isBooked = true;
-    house.requests = []; // Clear other requests (optional)
+    house.requests = []; 
 
     await house.save();
     res.json({ message: "Tenant accepted successfully!", house });
@@ -150,6 +143,7 @@ const acceptRequest = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 const declineRequest = async (req, res) => {
     try {
       const { requestId } = req.body;
@@ -159,6 +153,7 @@ const declineRequest = async (req, res) => {
       res.json(house);
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
+
 const toggleRent = async (req, res) => {
     try {
       const house = await House.findById(req.params.id);
@@ -169,11 +164,9 @@ const toggleRent = async (req, res) => {
       res.json(house);
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
-// Add this to houseController.js
 
-// file: server/controllers/houseController.js
-
-exports.vacateHouse = async (req, res) => {
+// 6. Vacate House (Fixed Export Issue)
+const vacateHouse = async (req, res) => {
   try {
     const houseId = req.params.id;
     const house = await House.findById(houseId);
@@ -182,24 +175,22 @@ exports.vacateHouse = async (req, res) => {
       return res.status(404).json({ message: "House not found" });
     }
 
-    // Security Check: Only Owner or the specific Tenant can vacate
-    // We check if tenant exists first to avoid crashes
-    const isOwner = house.owner.toString() === req.user._id.toString();
-    const isTenant = house.tenant && house.tenant.id && house.tenant.id.toString() === req.user._id.toString();
+    const isOwner = house.ownerId.toString() === req.user._id.toString();
+    const isTenant = house.currentTenant && String(house.currentTenant.userId) === String(req.user._id);
 
     if (!isOwner && !isTenant) {
       return res.status(403).json({ message: "Not authorized to vacate this house" });
     }
 
-    // 🛑 HARD RESET: Completely wipe tenant data
+    // Hard Reset using unset
     await House.findByIdAndUpdate(houseId, {
       $set: { 
         isBooked: false,
-        requests: [] // Optional: clear requests so the owner starts fresh
+        requests: [] 
       },
       $unset: { 
-        tenant: "",       // Removes 'tenant' field
-        currentTenant: "" // Removes 'currentTenant' field (just in case)
+        currentTenant: "", // This wipes the object completely
+        tenant: ""         // Just in case old data exists
       }
     });
 
@@ -218,9 +209,16 @@ const deleteHouse = async (req, res) => {
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
+// 7. EXPORT EVERYTHING CORRECTLY
 module.exports = { 
-  addHouse, getMyHouses, getAllHouses, 
-  requestBooking, acceptRequest, declineRequest, 
-  toggleRent, deleteHouse,
-  updateTenantDetails
+  addHouse, 
+  getMyHouses, 
+  getAllHouses, 
+  requestBooking, 
+  acceptRequest, 
+  declineRequest, 
+  toggleRent, 
+  deleteHouse,
+  updateTenantDetails,
+  vacateHouse // <--- IT IS HERE NOW!
 };
